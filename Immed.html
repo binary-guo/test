@@ -1,0 +1,900 @@
+<!DOCTYPE html>
+<html lang="zh" xmlns:th="http://www.thymeleaf.org" style="height:100%;overflow: hidden;">
+<head>
+    <th:block th:include="include :: header('修改笔录管理')"/>
+    <th:block th:include="include :: datetimepicker-css"/>
+    <link rel="stylesheet" th:href="@{/css/viewer.css}">
+    <script src="../js/ktxxhtml/Cursor.js" th:src="@{/js/ktxxhtml/Cursor.js}" type="text/javascript"
+            charset="utf-8"></script>
+
+</head>
+<body>
+<th:block th:include="include :: footer"/>
+<th:block th:include="include :: datetimepicker-js"/>
+<script type="text/javascript" th:src="@{/ajax/libs/UEditorPlus/ueditor.config.js}"
+        src="/static/ajax/libs/UEditorPlus/ueditor.config.js"></script>
+<script type="text/javascript" th:src="@{/ajax/libs/UEditorPlus/ueditor.all.js}"
+        src="/static/ajax/libs/UEditorPlus/ueditor.all.js"></script>
+<h1>UEditor快速开始示例</h1>
+<!--<form method="post">-->
+<form class="form-horizontal m" id="form-ktxxhtml-edit" style="margin:0;padding:0;">
+    <input id="id" name="id" th:value="${kttxxhtmlId}" type="hidden">
+    <input id="kttxxid" name="kttxxid" th:value="${kttxxId}" type="hidden">
+    <input name="html" th:value="${ktxxhtml}" class="hl form-control" type="hidden">
+    <!--    <input id="ip"><a onclick="insertContent()">插入</a>-->
+</form>
+<div hidden id="imgbl">
+    <img id="immedimg" data-original="" src="">
+</div>
+<a id="word" style="display: none" target="_blank" href=""><span id="worddown"></span></a>
+<script id="editor" type="text/plain" style="height:300px;"></script>
+<!--<script th:src="@{/js/jquery.min.js}"></script>-->
+<script th:src="@{/js/viewer.js}"></script>
+<script type="text/javascript">
+    // ue编辑器
+    var ue;
+    var UeDocument;
+
+    var prefix = ctx + "zhts/ktxxhtml";
+    let dossierList;
+    // 语音识别输入状态
+    var insertStatus = true;
+
+    // 范围选择器
+    var range;
+
+    // 保存节点
+    var node;
+    var startNode;
+    var nextParentNode;
+
+    //图片
+    var viewerss = new Viewer(document.getElementById("imgbl"), {
+        url: "data-original",
+        show: function () {
+            viewerss.update();
+        }
+    })
+    // 样式对象 本可以写在<style>里 ,但在嵌入的iframe里却读取不了(可能我操作不对,我也不懂)
+    const yysb = {
+        'font-family': 'FangSong_GB2312',
+        'cursor': 'not-allowed',
+        'font-weight': 'bold',
+        'font-size': '24px'
+    }
+    //录像标记时间
+    var second = 0;
+    setInterval(function () {
+        second++;
+    }, 1000);
+    // 判断是否输入状态  输入状态监听
+
+    var doing;
+    var issr = true;
+    var content = 0;
+    $(function () {
+        // 请求卷宗数据
+        $.ajax({
+            type: "GET",//方法类型
+            url: prefix + "/getDossier",//url
+            data: {id: $("#id").val()},
+            success: function (result) {
+                dossierList = result
+            }
+        })
+
+        var timeoutDossier = null;  // 卷宗延时刷新
+        var timeoutEdit = null;  // 编辑延时保存
+
+        // 编辑器实例化
+        ue = UE.getEditor('editor', {
+            // ... 更多配置
+            UEDITOR_HOME_URL: ctx + 'ajax/libs/UEditorPlus/'
+        });
+        //时实监控
+        setInterval(function () {
+            iddd();
+        }, 1000)
+        setInterval(function () {
+            getDossier();
+            jianting();
+        }, 2000);
+        // ue.addListener('contentChange', function (editor) {
+        //     getDossier();
+        //     jianting();
+        // })
+        // ueditor监听
+        ue.ready(function () {
+
+            // 初始化设置内容
+            ue.setContent($(".hl").val());
+            // 内容变动监听
+            ue.addListener('contentChange', function (editor) {
+                issr = false;
+                console.log(editor);
+                if (timeoutDossier != null) {
+                    clearTimeout(timeoutDossier);
+                }
+                timeoutDossier = setTimeout(
+                    getDossier // 调用卷宗替换
+                    , 2000);
+                if (timeoutEdit != null) {
+                    clearTimeout(timeoutEdit);
+                }
+                timeoutEdit = setTimeout(function () {
+                    submitHandler();// 保存内容
+                    jianting();
+                }, 1000);
+            })
+
+            //鼠标点击监听
+            ue.addListener('mouseup', function (e) {
+                startNode = UeDocument.getSelection().anchorNode.parentElement
+                var offset=$(startNode).offset().top
+                getgbweiz(UeDocument,offset);
+                // console.log(startNode)
+                // console.log(startNode.parentElement)
+            })
+            //监听按键
+            ue.addListener('keydown', function (type, evt) {
+
+                var keyCode = evt.keyCode || evt.which;
+                //console.log(keyCode)
+                if (keyCode == 112) {
+                    //F1
+                    window.parent.postMessage("onkey|F1", "*");
+                } else if (keyCode == 113) {
+                    //F2
+                    // window.parent.postMessage("onkey|F2", "*");
+                    getDossier()
+                } else if (keyCode == 114) {
+                    //F3
+                    window.parent.postMessage("onkey|F3", "*");
+                } else if (keyCode == 115) {
+                    //F4
+                    window.parent.postMessage("onkey|F4", "*");
+
+                } else if (keyCode == 116) {
+                    //F5
+                    window.parent.postMessage("onkey|F5", "*");
+                } else if (keyCode == 117) {
+                    //F6
+                    window.parent.postMessage("onkey|F6", "*");
+                    // state = !state;
+                    // if (UeDocument.getElementById("yysb") === null && state) {
+                    //     node = startNode
+                    //     var str = '<input type="text" id="yysb" placeholder="--语音识别中--" disabled="disabled">'
+                    //     var objE = document.createElement("div");
+                    //     objE.innerHTML = str
+                    //     objE.childNodes;
+                    //
+                    //     var inputNode = $.parseHTML(str)[0]
+                    //     UE.dom.domUtils.setStyles(inputNode, yysb)
+                    //
+                    //     if (node === undefined) {
+                    //         node = UeDocument.getElementsByTagName('body')[0];
+                    //         node.appendChild(inputNode)
+                    //     } else if (node.parentNode.nodeName === 'P') {
+                    //         // node.parentNode.insertAfter($.parseHTML(str)[0],node)
+                    //         node.parentNode.appendChild(inputNode)
+                    //         // clearInterval(messageTimeout)
+                    //         // clearYYSB()
+                    //     } else {
+                    //         node.parentNode.parentNode.appendChild(inputNode)
+                    //     }
+                    // } else if (UeDocument.getElementById('yysb') !== null) {
+                    //     UeDocument.getElementById('yysb').remove()
+                    // }
+                } else if (keyCode == 118) {
+                    //F7
+                    window.parent.postMessage("onkey|F7", "*");
+                } else if (keyCode == 119) {
+                    //F8
+                    window.parent.postMessage("onkey|F8", "*");
+                } else if (keyCode == 120) {
+                    //F9
+                    window.parent.postMessage("onkey|F9", "*");
+                } else if (keyCode == 121) {
+                    //F10
+                    window.parent.postMessage("onkey|F10", "*");
+                } else if (event.ctrlKey && event.keyCode == 81) {
+                    console.log("x");
+                    getDossier()
+                    issr = false;
+                    // content=0;
+                    //jianting()
+                    sxxx()
+                } else if (keyCode == 18) {  // 快捷键打标(alt键)
+                    console.log($("#kttxid").val())
+                    window.parent.postMessage("mark|" + $("#kttxxid").val() + "|" + second);
+                } else if (keyCode == 13) {
+                    iddd();
+                    // nodeListOf.forEach(function(item,index){
+                    //    console.log(item)
+                    // })
+                } else if (keyCode == 8) {
+                    let html = ue.getContent();
+                    for (let i = 0; i < dossierList.length; i++) {
+                        let name = dossierList[i].cmc
+                        if (dossierList[i].file !== null && insertStatus) {
+                            // 去掉文件后缀
+                            name = dossierList[i].cmc.replace('.' + dossierList[i].type, '')
+                            if (html.indexOf(name) > -1) {
+
+                                if (dossierList[i].cmc.indexOf(".doc") == -1) {
+                                    content = html.lastIndexOf(name);
+                                }
+                                //console.log("2")
+                            }
+                        }
+                    }
+                    //记录html里卷宗
+                    idar1 = jzlist();
+                } else if (keyCode == 46) {
+                    let html = ue.getContent();
+                    for (let i = 0; i < dossierList.length; i++) {
+                        let name = dossierList[i].cmc
+                        if (dossierList[i].file !== null && insertStatus) {
+                            // 去掉文件后缀
+                            name = dossierList[i].cmc.replace('.' + dossierList[i].type, '')
+                            if (html.indexOf(name) > -1) {
+
+                                if (dossierList[i].cmc.indexOf(".doc") == -1) {
+                                    content = html.lastIndexOf(name);
+                                }
+                                //console.log("2")
+                            }
+                        }
+                    }
+                    //记录html里卷宗
+                    idar1 = jzlist();
+                } else if (event.ctrlKey && event.keyCode == 49) {
+                    zscr(7428);
+                } else if (event.ctrlKey && event.keyCode == 50) {
+                    zscr(7431);
+                } else if (event.ctrlKey && event.keyCode == 51) {
+                    zscr(7426);
+                } else if (event.ctrlKey && event.keyCode == 52) {
+                    zscr(7862);
+                }
+            })
+        });
+
+        function iddd() {
+            try {
+                var body = UeDocument.getSelection().anchorNode.parentElement.parentElement;
+                var alist = body.querySelectorAll('a');
+                alist.forEach(function (element) {
+                    if (element.innerText == "") {
+                        element.remove();
+                    }
+                    if (element.querySelectorAll("br").length > 0) {
+                        element.parentElement.innerHTML = "<br>";
+                        element.remove();
+
+                    }
+                })
+            } catch (e) {
+
+            }
+
+        }
+
+        // 获取光标位置
+        function getCursortPosition(textDom) {
+            var cursorPos = 0;
+            if (document.selection) {
+                // IE Support
+                textDom.focus();
+                var selectRange = document.selection.createRange();
+                selectRange.moveStart('character', -textDom.value.length);
+                cursorPos = selectRange.text.length;
+            } else if (textDom.selectionStart || textDom.selectionStart == '0') {
+                // Firefox support
+                cursorPos = textDom.selectionStart;
+            }
+            return cursorPos;
+        }
+
+        //安卓端
+        // function jsMethod(JsMethod){
+        //     let richText = UeDocument.getElementsByClassName('view')[1];
+        //     let offset = Cursor.getCurrentCursorPosition(richText);
+        //     jsFunction.MyResponse
+        //     return offset;
+        // }
+        // function BubbleSort(arr){
+        //     var temp,exchange;
+        //     for(var i=0;i<arr.length;i++){
+        //      var  name = arr[i].cmc.replace('.' + arr[i].type, '');
+        //      exchange=false;
+        //
+        //     }
+        // }
+        var obj = {};
+        var insertName;
+        var nowName;
+        //监听消息
+        var state = false;
+
+        window.addEventListener("message", function (e) {
+            var data = e.data;
+            var datalist = data.split("|");
+            console.log(datalist)
+            if (datalist < 2) return;
+            switch (datalist[0]) {
+                case "insert":
+                    issr = false;
+                    jianting();
+                    switch (datalist[1]) {
+                        //客户端调用快捷键刷新卷宗
+                        case "refresh":
+                            //content=0;
+                            issr = false;
+                            getDossier()
+                            //jianting()
+                            sxxx()
+                            break;
+
+                        //自动同步开启
+                        case "start":
+                            // 如果有输入框就嘎掉
+                            if (UeDocument.getElementById('yysb') !== null) {
+                                UeDocument.getElementById('yysb').remove()
+                            }
+                            state = true;
+                            node = startNode
+                            var str = '<input type="text" id="yysb" style="font-family: FangSong_GB2312;\n' +
+                                '        cursor: not-allowed;\n' +
+                                '        font-size: 24px;\n' +
+                                '        border: 1px solid #0f2d2d;\n' +
+                                '        border-radius: 5px;" placeholder="语音识别中" disabled="disabled">'
+                            console.log($.parseHTML(str))
+                            var inputNode = $.parseHTML(str)[0]
+                            UE.dom.domUtils.setStyles(inputNode, yysb)
+                            console.log("test");
+                            console.log(node);
+                            // node 未初始化
+                            if (node === undefined) {
+                                node = UeDocument.getElementsByTagName('body')[0];
+                                var indx = node.getElementsByTagName("p").length;
+                                node = node.getElementsByTagName("p")[indx - 1];
+                                node.append(inputNode);
+                                node = UeDocument.getElementById('yysb').parentNode;
+                                // 说明点到了没有标签的地方  插入到最后
+                            } else if (node.nodeName === 'BODY') {
+                                node = UeDocument.getElementsByTagName('body')[0];
+                                var indx = node.getElementsByTagName("p").length;
+                                node = node.getElementsByTagName("p")[indx - 1];
+                                node.append(inputNode);
+                                //node.appendChild(inputNode)
+                                //node为p 直接在node节点后面插入
+                            } else if (node.nodeName === 'P') {
+                                node.appendChild(inputNode)
+                                // nodo 如果不为p 找父节点
+                            } else if (node.parentNode.nodeName === 'P') {
+                                // node.parentNode.insertAfter($.parseHTML(str)[0],node)'
+                                node.parentNode.appendChild(inputNode)
+                                node = node.parentNode
+                            } else {
+                                node.parentNode.parentNode.appendChild(inputNode)
+                                node = node.parentNode.parentNode
+                            }
+
+                            // 先删除前后也有id属性
+                            while (UeDocument.getElementById('insertSpan') !== null) {
+                                UeDocument.getElementById('insertSpan').removeAttribute('id')
+                            }
+                            while (UeDocument.getElementById('next') !== null) {
+                                UeDocument.getElementById('next').removeAttribute('id')
+                            }
+                            if (node.nextSibling) {
+                                nextParentNode = UE.dom.domUtils.setAttributes(node.nextSibling, {
+                                    id: 'next'
+                                })
+                            } else {
+                                nextParentNode = UE.dom.domUtils.setAttributes(UeDocument.createElement('p'), {id: 'next'})
+                                UeDocument.getElementsByTagName('body')[0].appendChild(nextParentNode)
+                            }
+                            break;
+
+                        //自动同步关闭
+                        case "end":
+                            state = false
+                            nowName = insertName = null
+                            UeDocument.getElementById('yysb') !== null ? UeDocument.getElementById('yysb').remove() : null
+                            UeDocument.getElementById('next') !== null ? UeDocument.getElementById('next').removeAttribute('id') : null
+                            break;
+
+                        // 客户端调取保存方法
+                        case "tsend":
+                            submitHandler()
+                            break;
+
+                        //快捷键插入名字
+                        case "insertName":
+                            let richText = UeDocument.getElementsByClassName('view')[1];
+                            let offset = Cursor.getCurrentCursorPosition(richText);
+                            ue.execCommand('inserthtml', '<span style="font-family: FangSong_GB2312; font-size: 24px;">' + datalist[2] + '</span>');
+                            let richText1 = UeDocument.getElementsByClassName('view')[1];
+                            Cursor.setCurrentCursorPosition(offset + datalist[2].length, richText1);
+                            // console.log(offset)
+                            richText.focus();
+                            break;
+
+                        //语音识别插入逻辑
+                        default:
+                            nowName = datalist[2]
+                            // console.log('所在位置', UE.dom.domUtils.inDoc(node, UeDocument))
+                            // 如果yysb为空,说明当前保存的node节点已被删除  重新创建
+                            if (UeDocument.getElementById("yysb") === null && state) {
+                                var str = '<input type="text" id="yysb" style="font-family: FangSong_GB2312;cursor: not-allowed;font-size: 24px;border: 1px solid #0f2d2d;border-radius: 5px;" placeholder="语音识别中" disabled="disabled">'
+                                if (UE.dom.domUtils.inDoc(node, UeDocument)) {
+                                    node.appendChild($.parseHTML(str)[0])
+                                } else {
+                                    nextParentNode.previousSibling.appendChild($.parseHTML(str)[0])
+                                }
+
+                            }
+
+                            // 给input框赋值
+                            obj.insertVal = nowName + ": " + datalist[1]
+                            // 为true时,说明识别完毕
+                            if (datalist[3] === 'true' && state) {
+                                if (UeDocument.getElementById('insertSpan') !== null) {
+                                    UeDocument.getElementById('insertSpan').removeAttribute('id')
+                                }
+                                node = UeDocument.getElementById('yysb').parentNode
+                                // 当插入身份不一致时 要换行  反之不换行
+                                if (insertName !== nowName) {
+                                    if (UeDocument.getElementById('yysb') !== null) {
+                                        UeDocument.getElementById('yysb').remove()
+                                    }
+                                    var str = '<p class="MsoNormal" style="margin-top: 5px; margin-bottom: 5px; overflow-wrap: break-word; font-family: &quot;sans serif&quot;, tahoma, verdana, helvetica; font-size: 12px; text-indent: 33.6pt;"><span id="insertSpan" style="font-family: FangSong_GB2312;font-size: 24px;">' + nowName + ": " + datalist[1] + '</span><input id="yysb" style="font-family: FangSong_GB2312;cursor: not-allowed;font-size: 24px;border: 1px solid #0f2d2d;border-radius: 5px;" placeholder="语音识别中" disabled="disabled"></p>'
+                                    $.parseHTML(str)
+                                    UE.dom.domUtils.insertAfter(node, $.parseHTML(str)[0]); //在node节点后面插入newNode
+                                } else {
+                                    var str = '<span id="insertSpan" style="font-family: FangSong_GB2312;font-size: 24px;">' + datalist[1] + '</span>'
+                                    node.insertBefore($.parseHTML(str)[0], UeDocument.getElementById("yysb"))
+                                }
+                                // 重新更新一下next位置
+                                if (!UeDocument.getElementById('next')) {
+                                    if (node.nextSibling) {
+                                        nextParentNode = UE.dom.domUtils.setAttributes(node.nextSibling, {
+                                            id: 'next'
+                                        })
+                                    } else {
+                                        nextParentNode = UE.dom.domUtils.setAttributes(UeDocument.createElement('p'), {id: 'next'})
+                                        UeDocument.getElementsByTagName('body')[0].appendChild(nextParentNode)
+                                    }
+                                }
+                                insertName = nowName
+                                UeDocument.getElementById('yysb').value = ''
+                                checkLength(UeDocument.getElementById("yysb"))
+
+                                if (timeoutEdit != null) {
+                                    clearTimeout(timeoutEdit);
+                                }
+                                timeoutEdit = setTimeout(function () {
+                                    submitHandler();// 保存内容
+                                }, 1000);
+                            }
+                            break;
+                    }
+                    break;
+                case "mark":
+                    ue.execCommand('inserthtml', '<strong style="color:red;dispaly:inline-block;font-size: 24px"   data-time="' + datalist[1] + '|' + datalist[2] + '">★</strong>');
+                    break;
+            }
+
+        });
+
+        // 延迟半秒后启动 中英文输入状态监听 （因ueditor还没完全加载完成,下面的"document.getElementById('ueditor_0')"为空,所以延迟）
+        setTimeout(window.onload = function () {
+            UeDocument = document.getElementById('ueditor_0').contentWindow.document
+            doing = true;
+            // var doSomething=function(e){
+            //     doing=true;
+            //     console.log(11111)
+            // }
+
+            // 正在中文输入状态
+            UeDocument.addEventListener('compositionstart', function (e) {
+                doing = false;
+            }, false);
+
+            // 正在输入
+            UeDocument.addEventListener('input', function (e) {
+                if (!doing) {
+                    // doSomething();
+                }
+            }, false);
+
+            // 中文状态输入完毕
+            UeDocument.addEventListener('compositionend', function (e) {
+                doing = true;
+                // doSomething();
+            }, false);
+        }, 500)
+
+        setTimeout(function () {
+            Object.defineProperty(obj, "insertVal", {
+                set: function (val) {
+                    $("#ip").val(val)
+                    UeDocument.getElementById("yysb").value = val
+                    checkLength(UeDocument.getElementById("yysb"))
+
+                }
+            })
+            $("#ip").keyup(function (event) {
+                obj.insertVal = event.target.value
+            })
+        }, 500)
+    });
+
+    // 更改语音识别框长度
+    function checkLength(which) {
+        var iCount = which.value;
+        if (iCount.length === 0) {
+            which.size = 10
+        } else {
+            which.size = iCount.length * 1.7;
+        }
+    }
+
+    // 卷宗刷新替换
+    function getDossier() {
+
+        // 判断是否在输入状态
+        if (doing) {
+            let html = ue.getContent();
+            if (dossierList && dossierList.length > 0) {
+                // 替换前获取光标位置
+                let richText = UeDocument.getElementsByClassName('view')[1];
+                let offset = Cursor.getCurrentCursorPosition(richText);
+                for (let i = 0; i < dossierList.length; i++) {
+                    let name = dossierList[i].cmc
+                    if (dossierList[i].file !== null && insertStatus) {
+                        // 去掉文件后缀
+                        name = dossierList[i].cmc.replace('.' + dossierList[i].type, '');
+                        if (html.indexOf(name) !== -1) {
+                            // console.log(dossierList[i])
+                            let a_name = '<a style="color: #1e9fff; cursor: pointer" onclick="window.parent.photoViewer(' + dossierList[i].id + ')">' + name + '</a>';
+                            //let a_name = '<a   data-original="'+dossierList[i].file+'" style="color: #1e9fff; cursor: pointer">' + name + '</a>';
+                            //--标记
+                            // 判断是否已经替换过了,避免重复添加A标签
+                            if (html.indexOf(a_name) === -1) {
+                                console.log('位置:', a_name)
+                                // console.log(html)
+                                html = html.replace(new RegExp(name, 'g'), a_name)
+                            } else {
+                                // 防止a标签重复叠加  先把原有a标签替换为特殊字符 然后先替换非a标签  在把特殊字符替换回来
+                                // let content = html.replaceAll(a_name, '#######')  不支持replaceAll方法
+                                let content = html;
+                                while (content.indexOf(a_name) !== -1) {
+                                    content = content.replace(a_name, '#######')
+                                }
+                                if (content.indexOf(name) !== -1) {
+                                    html = content
+                                    html = html.replace(new RegExp(name, 'g'), a_name)
+                                    html = html.replace(new RegExp('#######', 'g'), a_name)
+                                } else {
+                                    continue;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (ue.getContent() !== html) {
+                    ue.setContent(html)
+                    //替换后赋予光标
+                    let richText1 = UeDocument.getElementsByClassName('view')[1];
+                    Cursor.setCurrentCursorPosition(offset, richText1);
+                    // console.log(offset)
+                    richText.focus();
+                }
+            }
+        }
+    }
+
+    // 内容保存
+    function submitHandler() {
+        var val = ue.getContent();
+        var root = UE.htmlparser(val, true);
+        for (var i = 0; i < root.children.length; i++) {
+            root.children[i].removeChild(root.getNodeById('yysb'), false)
+        }
+        val = root.toHtml()
+        // 存数据库时,去掉达标符号
+        val = val.replace(new RegExp('★', 'g'), '')
+        // val = escape(val);
+        // $.validate.form()
+        $(".hl").val(val);
+        if (true) {
+            $.ajax({
+                //几个参数需要注意一下
+                type: "POST",//方法类型
+                dataType: "json",//预期服务器返回的数据类型
+                url: prefix + "/ImmedEdit",//url
+                data: $('#form-ktxxhtml-edit').serialize(),
+                success: function (result) {
+                },
+                error: function () {
+                    layer.msg('更新失败！', {icon: 1, time: 3000});
+                }
+            });
+        }
+    }
+
+
+    // 语音识别输入模拟测试
+    function insertContent() {
+        var data = UeDocument.getElementById("yysb").value
+        console.log(data, 0)
+        if (UeDocument.getElementById('yysb') === null) {
+            node = node.parentNode
+        }
+        var str = '<span id="insertSpan" style="font-family: FangSong_GB2312;font-size: 24px;">' + data + '</span>'
+
+        node = UeDocument.getElementById('yysb').parentNode
+        node.insertBefore($.parseHTML(str)[0], UeDocument.getElementById("yysb"))
+        UeDocument.getElementById("yysb").value = ''
+        checkLength(UeDocument.getElementById("yysb"))
+        $("#ip").val('')
+
+    }
+
+    //PDFViewer()
+
+
+    function photoViewer(value) {
+        let img = value;
+        // let [demo, demoImg] = [document.createElement('div'), document.createElement('img')]
+        // demo.setAttribute("onclick", "window.parent.closeImg(this)")
+        // demo.className = 'photoViewer'
+        $.ajax({
+
+            //几个参数需要注意一下
+            type: "get",//方法类型
+            url: prefix + "/jzurl",//url
+            data: {id: img},
+            success: function (result) {
+                // demoImg.src = result
+                $("#immedimg").attr("data-original", result)
+                $("#immedimg").attr("src", result)
+                $("#immedimg").attr("data-original", result)
+                $("#immedimg").attr("src", result)
+                viewerss.show();
+            },
+            error: function () {
+                layer.msg('失败！', {icon: 1, time: 3000});
+            }
+        })
+
+        // demoImg.className = "imgViewer"
+
+        // demo.append(demoImg)
+        // $('body').append(demo)
+
+    }
+
+    //package com.ruoyi.web.controller.zhts;
+    //推送http://149.4.142.225:8088/zhft/voice/dossier/editstatus
+    //$(".note-editable").scrollTop($(".note-editable").scrollTop()+$(".active").position().top);
+    // 推送
+    // var idarry = [];
+
+    var idar1 = []
+
+    function jianting() {
+        // 判断是否在输入状态
+        if (doing) {
+            let html = ue.getContent();
+            if (html == '') {
+                content = 0;
+            }
+
+            if (dossierList && dossierList.length > 0) {
+                // 替换前获取光标位置
+                //let richText = UeDocument.getElementsByClassName('view')[1];
+                //let offset = Cursor.getCurrentCursorPosition(richText);
+                for (let i = 0; i < dossierList.length; i++) {
+                    let name = dossierList[i].cmc
+                    if (dossierList[i].file !== null && insertStatus) {
+                        // 去掉文件后缀
+                        name = dossierList[i].cmc.replace('.' + dossierList[i].type, '')
+                        if (html.indexOf(name) > -1) {
+
+                            if (dossierList[i].cmc.indexOf(".doc") == -1) {
+                                if (html.lastIndexOf(name) > content && issr == false) {
+                                    //idarry.push(dossierList[i].id) html.lastIndexOf(name) > content
+                                    if (idar1.length === jzlist().length && idar1.toString() === jzlist().toString()) {
+                                        return;
+                                    }
+                                    idar1 = jzlist();
+                                    zscr(dossierList[i].id);
+                                    content = html.lastIndexOf(name);
+                                    // console.log("成功1")
+                                }
+                            }
+                            //console.log("2")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    var idarry = [];
+
+    //Ctrl+q 强制推送调用这个方法
+    function sxxx() {
+        // 判断是否在输入状态
+        if (doing) {
+            idarry = [];
+            let html = ue.getContent();
+            if (html == '') {
+                content = 0;
+            }
+            if (dossierList && dossierList.length > 0) {
+                // 替换前获取光标位置
+                for (let i = 0; i < dossierList.length; i++) {
+                    let name = dossierList[i].cmc
+                    if (dossierList[i].file !== null && insertStatus) {
+                        // 去掉文件后缀
+                        name = dossierList[i].cmc.replace('.' + dossierList[i].type, '')
+                        if (html.indexOf(name) > -1) {
+
+                            if (dossierList[i].cmc.indexOf(".doc") == -1) {
+                                idarry.push(dossierList[i].id)
+                                // if (html.lastIndexOf(name) > content&&issr==false) {
+                                //     //idarry.push(dossierList[i].id) html.lastIndexOf(name) > content
+                                //     zscr(dossierList[i].id);
+                                //     content = html.lastIndexOf(name);
+                                //     // console.log("成功1")
+                                // }
+                            }
+                            //console.log("2")
+                        }
+                    }
+                }
+                if (idarry.length == 0) {
+                    return;
+                }
+                zscr(idarry[idarry.length - 1]);
+            }
+        }
+    }
+
+    //获取地址栏参数bltype
+    function GetQueryString() {
+        let reg = new RegExp("(A|&)blType=([^&]*)(&|$)")
+        let r = window.location.search.substring(1).match(reg)
+        if (r !== null) return r[2];
+        return null
+    }
+
+    //推送
+    function zscr(value) {
+        //var body =document.getElementById("ueditor_0");
+        // var body=$("#ueditor_0")[0].contentWindow.document;
+        //
+        //     var ty= $(body).find(".isfs");
+        //     console.log(ty[0])
+        //     if (ty.length == 0) {
+        //             return;
+        //
+
+        if (GetQueryString() != 3 || GetQueryString() == null) {
+            issr = true;
+            return;
+        }
+        let vodeid = value;
+        $.ajax({
+            //几个参数需要注意一下
+            type: "get",//方法类型
+            url: prefix + "/zscr",//url
+            data: {id: vodeid},
+            success: function (result) {
+                // demoImg.src = vodeid
+                //console.log(ty)
+                //$(ty[0]).removeClass("isfs");
+                issr = true;
+                console.log(result);
+            },
+            error: function (er) {
+                // layer.msg('失败！', {icon: 1, time: 3000});
+                console.log(er);
+            }
+        })
+    }
+
+    //检查卷宗个数
+    function jzlist() {
+        var idar = [];
+        if (doing) {
+            let html = ue.getContent();
+            if (dossierList && dossierList.length > 0) {
+                for (let i = 0; i < dossierList.length; i++) {
+                    let name = dossierList[i].cmc
+                    if (dossierList[i].file !== null && insertStatus) {
+                        // 去掉文件后缀
+                        name = dossierList[i].cmc.replace('.' + dossierList[i].type, '')
+                        if (html.indexOf(name) !== -1) {
+                            if (dossierList[i].cmc.indexOf(".doc") === -1) {
+                                // console.log("12345678")
+                                if (html === "") return;
+                                var index = html.split(name).length - 1
+                                for (let i = 0; i < index; i++) {
+                                    idar.push(dossierList[i].id.toString())
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return idar;
+    }
+
+    $(function () {
+        setTimeout(function () {
+            idar1 = jzlist();
+        }, 1000)
+    })
+
+    function closeImg(e) {
+        $(e).remove()
+    }
+    //获取光标位置
+    function getgbweiz(UeDocument,offset){
+        var nodedem = UeDocument.getElementsByTagName('body')[0];
+        var t=nodedem.getElementsByTagName("p")[0];
+        // let richText = UeDocument.getElementsByClassName('view')[1];
+        // let offset = Cursor.getCurrentCursorPosition(richText);
+        $(t).attr('data-gb',offset);
+        submitHandler();
+    }
+</script>
+</body>
+<style>
+    .photoViewer {
+        text-align: center;
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100vh;
+        padding: 100px;
+        background-color: #00000070;
+        box-sizing: border-box;
+        z-index: 9999;
+        overflow: auto;
+    }
+
+    .link {
+        color: #1e9fff;
+        font-family: FangSong_GB2312;
+        font-size: 24px;
+    }
+
+    .insertSpan {
+        font-family: FangSong_GB2312;
+        font-size: 24px;
+    }
+
+    #yysb {
+        font-family: FangSong_GB2312;
+        cursor: not-allowed;
+        font-weight: bold;
+        font-size: 24px;
+        border: 2px solid #0f2d2d;
+        border-radius: 50px;
+    }
+
+    .imgViewer {
+        /*width: 40%;*/
+        height: 100%;
+    }
+</style>
+</html>
